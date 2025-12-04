@@ -1,0 +1,197 @@
+:root {
+    color-scheme: light dark;
+
+    /* Light theme tokens */
+    --bg-light: #ffffff;
+    --fg-light: #111827;
+    --card-light: #f9fafb;
+    --border-light: #d1d5db;
+
+    /* Dark theme tokens */
+    --bg-dark: #020617;
+    --fg-dark: #e5e7eb;
+    --card-dark: #0f172a;
+    --border-dark: #334155;
+
+    /* Effective tokens (resolved by theme) */
+    --bg: var(--bg-light);
+    --fg: var(--fg-light);
+    --card: var(--card-light);
+    --border: var(--border-light);
+    --btn-active-bg: #000000;
+    --btn-active-fg: #ffffff;
+    --btn-active-border: #000000;
+  }
+
+  /* Auto-theme from system when no explicit data-theme is set */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --bg: var(--bg-dark);
+      --fg: var(--fg-dark);
+      --card: var(--card-dark);
+      --border: var(--border-dark);
+      --btn-active-bg: #ffffff;
+      --btn-active-fg: #000000;
+      --btn-active-border: #ffffff;
+    }
+  }
+
+  /* Explicit light theme override */
+  :root[data-theme="light"] {
+    --bg: var(--bg-light);
+    --fg: var(--fg-light);
+    --card: var(--card-light);
+    --border: var(--border-light);
+    --btn-active-bg: #000000;
+    --btn-active-fg: #ffffff;
+    --btn-active-border: #000000;
+  }
+
+  /* Explicit dark theme override */
+  :root[data-theme="dark"] {
+    --bg: var(--bg-dark);
+    --fg: var(--fg-dark);
+    --card: var(--card-dark);
+    --border: var(--border-dark);
+    --btn-active-bg: #ffffff;
+    --btn-active-fg: #000000;
+    --btn-active-border: #ffffff;
+  }
+
+  body {
+    margin:0;
+    font-family:system-ui, sans-serif;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    gap:24px;
+    min-height:100vh;
+    padding:32px 16px 40px;
+    background:var(--bg);
+    color:var(--fg);
+  }
+
+  .page-header {
+    width:100%;
+    max-width:720px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+
+  .page-header h1 {
+    font-size:18px;
+    font-weight:600;
+  }
+
+  .theme-toggle {
+    display:flex;
+    gap:6px;
+    align-items:center;
+    font-size:11px;
+  }
+
+  .theme-toggle button {
+    padding:4px 10px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    background:var(--card);
+    cursor:pointer;
+    font-size:11px;
+    color:var(--fg);
+    opacity:0.9;
+  }
+
+  .theme-toggle button.active {
+    background:var(--btn-active-bg);
+    color:var(--btn-active-fg);
+    border-color:var(--btn-active-border);
+    opacity:1;
+  }
+
+  .demo-row {
+    display:flex;
+    gap:24px;
+    align-items:center;
+    justify-content:center;
+    margin-top:12px;
+  }
+
+  .remy-wrapper { display:inline-flex; }
+  .remy-wrapper svg { width:20px; height:20px; }
+
+  .remy-border {
+    transition:stroke .35s linear;
+    transform-origin:50% 50%;
+  }
+
+  .remy-eye { transition:fill .35s linear; }
+
+  /* THINK MODE: dashed stroke + rotation */
+  .remy-thinking .remy-border {
+    stroke-dasharray:1 4;
+    stroke-linecap:round;
+    animation:remyRotate 6s linear infinite;
+  }
+
+  @keyframes remyRotate {
+    from { transform:rotate(0deg); }
+    to   { transform:rotate(360deg); }
+  }
+
+  .controls {
+    display:flex;
+    gap:12px;
+    margin-top:8px;
+  }
+
+  .controls button {
+    padding:6px 14px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    background:var(--card);
+    cursor:pointer;
+    font-size:13px;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+    color:var(--fg);
+  }
+
+  /* Active mode button */
+  .controls button.active {
+    background:var(--btn-active-bg);
+    color:var(--btn-active-fg);
+    border-color:var(--btn-active-border);
+  }
+
+  .spec-card {
+    width:100%;
+    max-width:720px;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:16px 18px;
+    font-size:13px;
+    line-height:1.5;
+  }
+
+  .spec-card h2 {
+    font-size:14px;
+    margin:0 0 8px;
+  }
+
+  .spec-card pre {
+    margin:8px 0 0;
+    padding:10px 12px;
+    border-radius:10px;
+    background:rgba(15,23,42,0.04);
+    overflow:auto;
+    font-size:12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .spec-card pre {
+      background:rgba(15,23,42,0.7);
+    }
+  }

@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Remy Component – Follow / Think / Idle</title>
+
+<!--
+===============================================
+ Remy Component Specification (English)
+===============================================
+
+Remy is a compact animated agent icon (20×20) with three modes:
+  • Follow  – Eyes follow the cursor, border + eyes smoothly cycle through colors.
+  • Think   – Adds dashed stroke + rotation on top of the color cycle (busy / processing).
+  • Idle    – Static color, eyes smoothly drift back to center, periodic blinking stays.
+
+Key features:
+  • Auto light/dark theme support (via prefers-color-scheme) + manual theme override.
+  • Multi-instance architecture (many Remy icons per page).
+  • Fully configurable palette per theme (followColor, idleColor, cycleColors).
+  • Smooth blinking with easing.
+  • Synchronized color changes for border and eyes.
+
+Public API:
+  new Remy(config)
+
+  config = {
+    container: "#selector" | HTMLElement,
+    palette: {
+      light: {
+        followColor: "#617280",
+        idleColor:   "#657C89",
+        cycleColors: ["#155DFC","#E7000B","#19C37D"]
+      },
+      dark: {
+        followColor: "#C9D3DD",
+        idleColor:   "#4B5D70",
+        cycleColors: ["#38BDF8","#FB7185","#4ADE80"]
+      }
+    },
+    cycleInterval: 900,
+    deadZone: 40,
+    falloff: 160,
+    maxOffset: 1.5,
+    eyeHeight: 5
+  }
+
+  Methods:
+    • setMode("follow" | "thinking" | "idle")
+    • handleThemeChange()      // re-evaluates theme + reapplies palette
+
+Example:
+  const remy = new Remy({ container: "#remyIcon" });
+  remy.setMode("follow");
+
+===============================================
+-->
+
+<style>
+  :root {
+    color-scheme: light dark;
+
+    /* Light theme tokens */
+    --bg-light: #ffffff;
+    --fg-light: #111827;
+    --card-light: #f9fafb;
+    --border-light: #d1d5db;
+
+    /* Dark theme tokens */
+    --bg-dark: #020617;
+    --fg-dark: #e5e7eb;
+    --card-dark: #0f172a;
+    --border-dark: #334155;
+
+    /* Effective tokens (resolved by theme) */
+    --bg: var(--bg-light);
+    --fg: var(--fg-light);
+    --card: var(--card-light);
+    --border: var(--border-light);
+    --btn-active-bg: #000000;
+    --btn-active-fg: #ffffff;
+    --btn-active-border: #000000;
+  }
+
+  /* Auto-theme from system when no explicit data-theme is set */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --bg: var(--bg-dark);
+      --fg: var(--fg-dark);
+      --card: var(--card-dark);
+      --border: var(--border-dark);
+      --btn-active-bg: #ffffff;
+      --btn-active-fg: #000000;
+      --btn-active-border: #ffffff;
+    }
+  }
+
+  /* Explicit light theme override */
+  :root[data-theme="light"] {
+    --bg: var(--bg-light);
+    --fg: var(--fg-light);
+    --card: var(--card-light);
+    --border: var(--border-light);
+    --btn-active-bg: #000000;
+    --btn-active-fg: #ffffff;
+    --btn-active-border: #000000;
+  }
+
+  /* Explicit dark theme override */
+  :root[data-theme="dark"] {
+    --bg: var(--bg-dark);
+    --fg: var(--fg-dark);
+    --card: var(--card-dark);
+    --border: var(--border-dark);
+    --btn-active-bg: #ffffff;
+    --btn-active-fg: #000000;
+    --btn-active-border: #ffffff;
+  }
+
+  body {
+    margin:0;
+    font-family:system-ui, sans-serif;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    gap:24px;
+    min-height:100vh;
+    padding:32px 16px 40px;
+    background:var(--bg);
+    color:var(--fg);
+  }
+
+  .page-header {
+    width:100%;
+    max-width:720px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+
+  .page-header h1 {
+    font-size:18px;
+    font-weight:600;
+  }
+
+  .theme-toggle {
+    display:flex;
+    gap:6px;
+    align-items:center;
+    font-size:11px;
+  }
+
+  .theme-toggle button {
+    padding:4px 10px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    background:var(--card);
+    cursor:pointer;
+    font-size:11px;
+    color:var(--fg);
+    opacity:0.9;
+  }
+
+  .theme-toggle button.active {
+    background:var(--btn-active-bg);
+    color:var(--btn-active-fg);
+    border-color:var(--btn-active-border);
+    opacity:1;
+  }
+
+  .demo-row {
+    display:flex;
+    gap:24px;
+    align-items:center;
+    justify-content:center;
+    margin-top:12px;
+  }
+
+  .remy-wrapper { display:inline-flex; }
+  .remy-wrapper svg { width:20px; height:20px; }
+
+  .remy-border {
+    transition:stroke .35s linear;
+    transform-origin:50% 50%;
+  }
+
+  .remy-eye { transition:fill .35s linear; }
+
+  /* THINK MODE: dashed stroke + rotation */
+  .remy-thinking .remy-border {
+    stroke-dasharray:1 4;
+    stroke-linecap:round;
+    animation:remyRotate 6s linear infinite;
+  }
+
+  @keyframes remyRotate {
+    from { transform:rotate(0deg); }
+    to   { transform:rotate(360deg); }
+  }
+
+  .controls {
+    display:flex;
+    gap:12px;
+    margin-top:8px;
+  }
+
+  .controls button {
+    padding:6px 14px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    background:var(--card);
+    cursor:pointer;
+    font-size:13px;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+    color:var(--fg);
+  }
+
+  /* Active mode button */
+  .controls button.active {
+    background:var(--btn-active-bg);
+    color:var(--btn-active-fg);
+    border-color:var(--btn-active-border);
+  }
+
+  .spec-card {
+    width:100%;
+    max-width:720px;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:16px 18px;
+    font-size:13px;
+    line-height:1.5;
+  }
+
+  .spec-card h2 {
+    font-size:14px;
+    margin:0 0 8px;
+  }
+
+  .spec-card pre {
+    margin:8px 0 0;
+    padding:10px 12px;
+    border-radius:10px;
+    background:rgba(15,23,42,0.04);
+    overflow:auto;
+    font-size:12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .spec-card pre {
+      background:rgba(15,23,42,0.7);
+    }
+  }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>Remy Component · Follow / Think / Idle</h1>
+  <div class="theme-toggle">
+    <span>Theme:</span>
+    <button id="themeAuto" class="active">Auto</button>
+    <button id="themeLight">Light</button>
+    <button id="themeDark">Dark</button>
+  </div>
+</header>
+
+<div class="demo-row">
+  <div id="remy1"></div>
+</div>
+
+<div class="controls">
+  <button id="btnFollow">Follow</button>
+  <button id="btnThink">Think</button>
+  <button id="btnIdle">Idle</button>
+</div>
+
+<section class="spec-card">
+  <h2>How to use Remy</h2>
+  <p>
+    Remy is a tiny animated agent icon that can be attached to any element on the page.
+    It supports three modes:
+    <strong>Follow</strong>, <strong>Think</strong>, and <strong>Idle</strong>.
+  </p>
+  <p>Minimal integration example:</p>
+  <pre><code>&lt;div id="remyExample"&gt;&lt;/div&gt;
+
+&lt;script&gt;
+  const remyExample = new Remy({
+    container: "#remyExample",
+    palette: {
+      light: {
+        followColor: "#617280",
+        idleColor:   "#657C89",
+        cycleColors: ["#155DFC", "#E7000B", "#19C37D"]
+      },
+      dark: {
+        followColor: "#C9D3DD",
+        idleColor:   "#4B5D70",
+        cycleColors: ["#38BDF8", "#FB7185", "#4ADE80"]
+      }
+    }
+  });
+
+  remyExample.setMode("follow");   // "follow" | "thinking" | "idle"
+&lt;/script&gt;
+</code></pre>
+</section>
+
+<script>
+/*
+===================================================
+   Remy Component Class (Fully English Comments)
+===================================================
+*/
+class Remy {
+  constructor(config = {}) {
+
+    // Merge user config with defaults
+    this.cfg = Object.assign({
+      container: null,
+      palette: {
+        light: {
+          followColor: "#617280",
+          idleColor:   "#657C89",
+          cycleColors: ["#155DFC","#E7000B","#19C37D","#FFB400","#9930FF"]
+        },
+        dark: {
+          followColor: "#C9D3DD",
+          idleColor:   "#4B5D70",
+          cycleColors: ["#38BDF8","#FB7185","#4ADE80","#FACC15","#A855F7"]
+        }
+      },
+      cycleInterval: 900,  // interval for color cycling
+      deadZone: 40,        // zone where eyes do not move
+      falloff: 160,        // eye tracking influence distance
+      maxOffset: 1.5,      // max eye offset
+      eyeHeight: 5         // full eye height
+    }, config);
+
+    this.mode = "follow";
+    this.colorIndex = 0;
+    this.theme = this._detectTheme();
+
+    this._initDOM();
+    this._applyBaseColor();
+    this._startColorCycle();
+    this._startBlink();
+    this._enableTracking();
+    this._setupThemeObserver();
+
+    // Register instance globally so external theme toggles can update it
+    if (!window.__remyInstances) window.__remyInstances = [];
+    window.__remyInstances.push(this);
+  }
+
+  /* Detect theme: explicit data-theme takes priority,
+     then system prefers-color-scheme. */
+  _detectTheme(){
+    const root = document.documentElement;
+    const explicit = root.getAttribute("data-theme");
+    if (explicit === "light" || explicit === "dark") return explicit;
+
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  }
+
+  /* Return palette based on current theme */
+  _getPalette(){
+    return this.cfg.palette[this.theme] || this.cfg.palette.light;
+  }
+
+  /* Create SVG structure inside container */
+  _initDOM(){
+    const c = (typeof this.cfg.container === "string")
+      ? document.querySelector(this.cfg.container)
+      : this.cfg.container;
+
+    this.wrapper = document.createElement("div");
+    this.wrapper.className = "remy-wrapper";
+    this.wrapper.innerHTML = `
+      <svg viewBox="0 0 20 20">
+        <circle class="remy-border" cx="10" cy="10" r="8"
+          fill="none" stroke="#000" stroke-width="2"/>
+        <g class="remy-eyes">
+          <rect class="remy-eye" x="7"  y="7.5" width="2" height="5" rx="1" fill="#000"/>
+          <rect class="remy-eye" x="11" y="7.5" width="2" height="5" rx="1" fill="#000"/>
+        </g>
+      </svg>`;
+    c.appendChild(this.wrapper);
+
+    this.svg = this.wrapper.querySelector("svg");
+    this.border = this.wrapper.querySelector(".remy-border");
+    this.leftEye  = this.wrapper.querySelectorAll(".remy-eye")[0];
+    this.rightEye = this.wrapper.querySelectorAll(".remy-eye")[1];
+
+    this.baseLeft  = { x:7,  y:7.5 };
+    this.baseRight = { x:11, y:7.5 };
+  }
+
+  /* Sync eyes + border color (always together) */
+  _syncColor(color){
+    this.border.setAttribute("stroke", color);
+    this.leftEye.setAttribute("fill", color);
+    this.rightEye.setAttribute("fill", color);
+  }
+
+  /* Apply initial color based on mode + theme */
+  _applyBaseColor(){
+    const pal = this._getPalette();
+    if (this.mode === "idle") this._syncColor(pal.idleColor);
+    else this._syncColor(pal.followColor);
+  }
+
+  /* Smooth color cycling for Follow + Think modes */
+  _startColorCycle(){
+    setInterval(()=>{
+      if (this.mode === "idle") return;
+
+      const pal = this._getPalette();
+      const colors = pal.cycleColors || [];
+      if (!colors.length) return;
+
+      this.colorIndex = (this.colorIndex+1) % colors.length;
+      this._syncColor(colors[this.colorIndex]);
+    }, this.cfg.cycleInterval);
+  }
+
+  /* Eyes blinking animation */
+  _blinkOnce(){
+    const H = this.cfg.eyeHeight;
+    const L = this.leftEye;
+    const R = this.rightEye;
+    const baseY = this.baseLeft.y;
+
+    const animate=(start,end,duration,cb)=>{
+      const t0 = performance.now();
+      const step = now=>{
+        const t = Math.min((now-t0)/duration,1);
+        const ease=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+        const v=start+(end-start)*ease;
+        const off=(H-v)/2;
+        L.setAttribute("height",v);
+        R.setAttribute("height",v);
+        L.setAttribute("y",baseY+off);
+        R.setAttribute("y",baseY+off);
+        if(t<1) requestAnimationFrame(step);
+        else cb && cb();
+      };
+      requestAnimationFrame(step);
+    };
+
+    animate(H,1,90,()=> animate(1,H,120));
+  }
+
+  /* Blinking loop (runs in all modes) */
+  _startBlink(){
+    const loop=()=>{
+      const delay = 2200 + Math.random()*2000;
+      setTimeout(()=>{
+        this._blinkOnce();
+        loop();
+      }, delay);
+    };
+    loop();
+  }
+
+  /* Eye tracking (Follow + Think) */
+  _enableTracking(){
+    document.addEventListener("mousemove", e=>{
+      if (this.mode === "idle") {
+        this._smoothCenterEyes();
+        return;
+      }
+
+      const r = this.svg.getBoundingClientRect();
+      const cx = r.left + r.width/2;
+      const cy = r.top  + r.height/2;
+
+      const dx = e.clientX - cx;
+      const dy = e.clientY - cy;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+
+      if (dist < this.cfg.deadZone) {
+        this.leftEye .setAttribute("x", this.baseLeft.x);
+        this.leftEye .setAttribute("y", this.baseLeft.y);
+        this.rightEye.setAttribute("x", this.baseRight.x);
+        this.rightEye.setAttribute("y", this.baseRight.y);
+        return;
+      }
+
+      const f = Math.min((dist - this.cfg.deadZone)/this.cfg.falloff, 1);
+      const offX = (dx/dist) * this.cfg.maxOffset * f;
+      const offY = (dy/dist) * this.cfg.maxOffset * f;
+
+      this.leftEye .setAttribute("x", this.baseLeft.x + offX);
+      this.leftEye .setAttribute("y", this.baseLeft.y + offY);
+      this.rightEye.setAttribute("x", this.baseRight.x + offX);
+      this.rightEye.setAttribute("y", this.baseRight.y + offY);
+    });
+  }
+
+  /* Smooth centering in Idle mode */
+  _smoothCenterEyes(){
+    const L = this.leftEye;
+    const R = this.rightEye;
+    const t = 0.15; // easing factor
+
+    let lx = parseFloat(L.getAttribute("x"));
+    let ly = parseFloat(L.getAttribute("y"));
+    let rx = parseFloat(R.getAttribute("x"));
+    let ry = parseFloat(R.getAttribute("y"));
+
+    L.setAttribute("x", lx + (this.baseLeft.x  - lx) * t);
+    L.setAttribute("y", ly + (this.baseLeft.y  - ly) * t);
+    R.setAttribute("x", rx + (this.baseRight.x - rx) * t);
+    R.setAttribute("y", ry + (this.baseRight.y - ry) * t);
+  }
+
+  /* Observe system theme changes and re-apply palette */
+  _setupThemeObserver(){
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", () => this.handleThemeChange());
+  }
+
+  /* Public method: recompute theme and re-apply colors */
+  handleThemeChange(){
+    this.theme = this._detectTheme();
+    this._applyBaseColor();
+  }
+
+  /* Public method: change mode */
+  setMode(m){
+    this.mode = m;
+    this.wrapper.classList.remove("remy-thinking","remy-idle");
+
+    if (m === "thinking") {
+      this.wrapper.classList.add("remy-thinking");
+    } else if (m === "idle") {
+      this.wrapper.classList.add("remy-idle");
+      this._applyBaseColor();
+    } else {
+      this._applyBaseColor();
+    }
+  }
+}
+
+/* DEMO INSTANCE */
+const remy1 = new Remy({ container:"#remy1" });
+
+/* MODE BUTTONS */
+const btnFollow = document.getElementById("btnFollow");
+const btnThink  = document.getElementById("btnThink");
+const btnIdle   = document.getElementById("btnIdle");
+
+function setActiveModeButton(btn){
+  [btnFollow,btnThink,btnIdle].forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+}
+
+btnFollow.onclick = () => { remy1.setMode("follow");   setActiveModeButton(btnFollow); };
+btnThink.onclick  = () => { remy1.setMode("thinking"); setActiveModeButton(btnThink);  };
+btnIdle.onclick   = () => { remy1.setMode("idle");     setActiveModeButton(btnIdle);   };
+
+setActiveModeButton(btnFollow);
+
+/* THEME TOGGLE BUTTONS */
+const themeAuto  = document.getElementById("themeAuto");
+const themeLight = document.getElementById("themeLight");
+const themeDark  = document.getElementById("themeDark");
+
+function setActiveThemeButton(btn){
+  [themeAuto, themeLight, themeDark].forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+
+/* Apply theme override and notify all Remy instances */
+function applyThemeOverride(mode){
+  const root = document.documentElement;
+  if (mode === "auto") {
+    root.removeAttribute("data-theme");
+  } else {
+    root.setAttribute("data-theme", mode);
+  }
+
+  if (window.__remyInstances) {
+    window.__remyInstances.forEach(instance => instance.handleThemeChange());
+  }
+}
+
+themeAuto.onclick  = () => { applyThemeOverride("auto");  setActiveThemeButton(themeAuto);  };
+themeLight.onclick = () => { applyThemeOverride("light"); setActiveThemeButton(themeLight); };
+themeDark.onclick  = () => { applyThemeOverride("dark");  setActiveThemeButton(themeDark);  };
+
+setActiveThemeButton(themeAuto);
+</script>
+
+</body>
+</html>
