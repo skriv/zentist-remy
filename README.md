@@ -1,4 +1,4 @@
-# Remy Component
+# Remy Ai Agent Icon Component
 
 Remy is a compact animated agent icon (20×20 internal coordinate system, scalable via container size)
 with three modes:
